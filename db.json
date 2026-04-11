@@ -1,0 +1,14 @@
+{
+  "users": [],
+  "offers": [
+    {
+      "id": 1,
+      "title": "Cadastro Rápido",
+      "desc": "Complete o cadastro e ganhe recompensa",
+      "payout": 5,
+      "link": "https://JOINADS-LINK.com?subid="
+    }
+  ],
+  "clicks": [],
+  "conversions": []
+}

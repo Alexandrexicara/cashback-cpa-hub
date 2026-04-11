@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPA HUB - Painel</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CPA HUB</h1>
+            <div class="user-info">
+                <span id="username"></span>
+                <div class="balance">
+                    💰 Saldo: R$ <span id="balance">0.00</span>
+                </div>
+                <button onclick="openWithdrawModal()" class="btn-withdraw">💸 Saque Pix</button>
+                <button onclick="logout()" class="btn-logout">Sair</button>
+            </div>
+        </header>
+
+        <main>
+            <h2>Ofertas Disponíveis</h2>
+            <div id="offers" class="offers-grid"></div>
+            
+            <h2 style="margin-top: 40px;">Histórico de Saques</h2>
+            <div id="withdrawals" class="withdrawals-list"></div>
+        </main>
+    </div>
+
+    <!-- Modal de Saque -->
+    <div id="withdraw-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeWithdrawModal()">&times;</span>
+            <h2>Solicitar Saque Pix</h2>
+            <p>Seu saldo: R$ <span id="modal-balance">0.00</span></p>
+            <input type="text" id="withdraw-pix" placeholder="Chave Pix" class="input-field">
+            <input type="number" id="withdraw-amount" placeholder="Valor (R$)" class="input-field" min="10" step="0.01">
+            <button onclick="requestWithdraw()" class="btn-primary">Solicitar Saque</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Verifica se usuário está logado
+        const subid = localStorage.getItem("subid");
+        if (!subid) {
+            window.location = "/login.html";
+        } else {
+            loadDashboard();
+            loadWithdrawals();
+        }
+    </script>
+</body>
+</html>

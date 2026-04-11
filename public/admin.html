@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPA HUB - Admin</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .withdrawal-action {
+            display: flex;
+            gap: 10px;
+        }
+        .btn-approve {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-reject {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CPA HUB - Admin</h1>
+            <button onclick="window.location='/'" class="btn-secondary">Voltar</button>
+        </header>
+
+        <main>
+            <section class="admin-section">
+                <h2>Adicionar Nova Oferta</h2>
+                <div class="form-grid">
+                    <input type="text" id="offerTitle" placeholder="Título da oferta" class="input-field">
+                    <input type="text" id="offerDesc" placeholder="Descrição" class="input-field">
+                    <input type="number" id="offerPayout" placeholder="Payout (R$)" class="input-field">
+                    <input type="text" id="offerLink" placeholder="Link da oferta (com ?subid= no final)" class="input-field">
+                    <button onclick="addOffer()" class="btn-primary">Adicionar Oferta</button>
+                </div>
+            </section>
+
+            <section class="admin-section">
+                <h2>Estatísticas do Sistema</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Usuários</h3>
+                        <p id="totalUsers">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Cliques</h3>
+                        <p id="totalClicks">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Conversões</h3>
+                        <p id="totalConversions">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Pago</h3>
+                        <p id="totalPaid">R$ 0</p>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                        <h3>Saques Pendentes</h3>
+                        <p id="pendingWithdrawals">R$ 0</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="admin-section">
+                <h2>Saques Pendentes</h2>
+                <div id="withdrawalsList" class="data-list"></div>
+            </section>
+
+            <section class="admin-section">
+                <h2>Lista de Usuários</h2>
+                <div id="usersList" class="data-list"></div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        function addOffer() {
+            const title = document.getElementById("offerTitle").value;
+            const desc = document.getElementById("offerDesc").value;
+            const payout = parseFloat(document.getElementById("offerPayout").value);
+            const link = document.getElementById("offerLink").value;
+
+            if (!title || !desc || !payout || !link) {
+                alert("Preencha todos os campos");
+                return;
+            }
+
+            fetch("/admin/offers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title, desc, payout, link })
+            })
+            .then(r => r.json())
+            .then(() => {
+                alert("Oferta adicionada!");
+                document.getElementById("offerTitle").value = "";
+                document.getElementById("offerDesc").value = "";
+                document.getElementById("offerPayout").value = "";
+                document.getElementById("offerLink").value = "";
+            });
+        }
+
+        function processWithdrawal(id, status) {
+            fetch(`/admin/withdrawals/${id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status })
+            })
+            .then(r => r.json())
+            .then(() => {
+                alert(`Saque ${status === 'approved' ? 'aprovado' : 'rejeitado'}!`);
+                loadAdmin();
+            });
+        }
+
+        function loadAdmin() {
+            // Estatísticas
+            fetch("/admin/stats")
+                .then(r => r.json())
+                .then(stats => {
+                    document.getElementById("totalUsers").textContent = stats.users;
+                    document.getElementById("totalClicks").textContent = stats.clicks;
+                    document.getElementById("totalConversions").textContent = stats.conversions;
+                    document.getElementById("totalPaid").textContent = `R$ ${stats.total_paid.toFixed(2)}`;
+                    document.getElementById("pendingWithdrawals").textContent = `R$ ${stats.pending_withdrawals.toFixed(2)}`;
+                });
+
+            // Saques pendentes
+            fetch("/admin/withdrawals")
+                .then(r => r.json())
+                .then(withdrawals => {
+                    const list = document.getElementById("withdrawalsList");
+                    if (withdrawals.length === 0) {
+                        list.innerHTML = "<p class='no-data'>Nenhum saque pendente.</p>";
+                        return;
+                    }
+                    
+                    list.innerHTML = withdrawals.map(w => `
+                        <div class="data-item">
+                            <span>${w.name} - R$ ${w.amount.toFixed(2)}</span>
+                            <span>${w.pix_key}</span>
+                            <div class="withdrawal-action">
+                                <button class="btn-approve" onclick="processWithdrawal(${w.id}, 'approved')">✓ Aprovar</button>
+                                <button class="btn-reject" onclick="processWithdrawal(${w.id}, 'rejected')">✗ Rejeitar</button>
+                            </div>
+                        </div>
+                    `).join("");
+                });
+
+            // Usuários
+            fetch("/admin/users")
+                .then(r => r.json())
+                .then(users => {
+                    const usersList = document.getElementById("usersList");
+                    usersList.innerHTML = users.map(u => `
+                        <div class="data-item">
+                            <span>${u.name} (${u.email || 'sem email'})</span>
+                            <span>SubID: ${u.subid.substring(0, 8)}...</span>
+                            <span>R$ ${u.balance.toFixed(2)}</span>
+                        </div>
+                    `).join("");
+                });
+        }
+
+        loadAdmin();
+    </script>
+</body>
+</html>

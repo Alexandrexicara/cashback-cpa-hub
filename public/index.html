@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPA HUB - Ganhe Dinheiro Real</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        * {
+            font-family: 'Poppins', sans-serif;
+        }
+        
+        /* Animações */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(60px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+        
+        .animate-fadeInUp {
+            animation: fadeInUp 0.8s ease-out forwards;
+        }
+        
+        .animate-slideInLeft {
+            animation: slideInLeft 0.8s ease-out forwards;
+        }
+        
+        .animate-slideInRight {
+            animation: slideInRight 0.8s ease-out forwards;
+        }
+        
+        .animate-delay-1 { animation-delay: 0.2s; opacity: 0; }
+        .animate-delay-2 { animation-delay: 0.4s; opacity: 0; }
+        .animate-delay-3 { animation-delay: 0.6s; opacity: 0; }
+        .animate-delay-4 { animation-delay: 0.8s; opacity: 0; }
+        
+        /* Grid Background */
+        .grid-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(102, 126, 234, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(102, 126, 234, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            z-index: -1;
+            pointer-events: none;
+        }
+        
+        .grid-bg::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 50% 50%, rgba(102, 126, 234, 0.1) 0%, transparent 50%);
+        }
+        .hero {
+            background: linear-gradient(-45deg, #667eea, #764ba2, #f093fb, #f5576c);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+            color: white;
+            padding: 100px 20px 120px;
+            text-align: center;
+            clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%);
+            margin-bottom: 60px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 10px,
+                rgba(255,255,255,0.03) 10px,
+                rgba(255,255,255,0.03) 20px
+            );
+            animation: shimmer 20s linear infinite;
+        }
+        
+        .hero h1 {
+            font-size: 4.5rem;
+            font-weight: 800;
+            margin-bottom: 25px;
+            text-shadow: 0 4px 30px rgba(0,0,0,0.3);
+            letter-spacing: -2px;
+            line-height: 1.1;
+        }
+        
+        .hero-subtitle {
+            font-size: 1.5rem;
+            font-weight: 300;
+            margin-bottom: 15px;
+            opacity: 0.95;
+        }
+        
+        .hero-highlight {
+            display: inline-block;
+            background: linear-gradient(120deg, #ffd700 0%, #ffb700 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 700;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        .hero-stats {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+        
+        .hero-stat {
+            text-align: center;
+        }
+        
+        .hero-stat-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #ffd700;
+            display: block;
+        }
+        
+        .hero-stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .btn-hero {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+            color: #333;
+            padding: 20px 50px;
+            border-radius: 50px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            box-shadow: 0 10px 40px rgba(255, 215, 0, 0.4);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            transition: left 0.5s;
+        }
+        
+        .btn-hero:hover::before {
+            left: 100%;
+        }
+        
+        .btn-hero:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 20px 50px rgba(255, 215, 0, 0.5);
+        }
+        .how-it-works {
+            padding: 80px 20px;
+            margin: 0 auto 60px;
+            max-width: 1200px;
+        }
+        
+        .section-title {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+        
+        .section-title h2 {
+            font-size: 3rem;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .section-title p {
+            color: #666;
+            font-size: 1.2rem;
+        }
+        
+        .highlight-green {
+            color: #00ff41 !important;
+            font-size: 1.8rem !important;
+            font-weight: 700;
+            text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41, 0 0 40px #00ff41;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 25px;
+        }
+        
+        @media (max-width: 1024px) {
+            .steps { grid-template-columns: repeat(2, 1fr); }
+        }
+        
+        @media (max-width: 600px) {
+            .steps { grid-template-columns: 1fr; }
+        }
+        .step {
+            text-align: center;
+            padding: 40px 30px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.1);
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid transparent;
+        }
+        
+        .step::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+            transform: scaleX(0);
+            transition: transform 0.4s ease;
+        }
+        
+        .step:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.2);
+            border-color: rgba(102, 126, 234, 0.1);
+        }
+        
+        .step:hover::before {
+            transform: scaleX(1);
+        }
+        
+        .step-number {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            font-weight: 800;
+            margin: 0 auto 25px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        .step:nth-child(2) .step-number { animation-delay: 0.5s; }
+        .step:nth-child(3) .step-number { animation-delay: 1s; }
+        .step:nth-child(4) .step-number { animation-delay: 1.5s; }
+        
+        .step h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+        
+        .step p {
+            color: #666;
+            line-height: 1.8;
+            font-family: 'Inter', sans-serif;
+        }
+        .warning-box {
+            background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+            border-left: 5px solid #ffc107;
+            border-radius: 0 20px 20px 0;
+            padding: 40px;
+            margin: 60px auto;
+            max-width: 900px;
+            box-shadow: 0 10px 40px rgba(255, 193, 7, 0.2);
+        }
+        
+        .warning-box h3 {
+            color: #856404;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .warning-box ul {
+            color: #856404;
+            margin-left: 0;
+            line-height: 2;
+            list-style: none;
+        }
+        
+        .warning-box li {
+            padding-left: 30px;
+            position: relative;
+            margin-bottom: 12px;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .warning-box li::before {
+            content: '⚡';
+            position: absolute;
+            left: 0;
+            font-size: 1.2rem;
+        }
+        .cta-section {
+            text-align: center;
+            padding: 100px 20px;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            clip-path: polygon(0 15%, 100% 0, 100% 100%, 0 100%);
+            margin: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .cta-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='4'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+        
+        .cta-section h2 {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+        
+        .cta-section p {
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+            opacity: 0.95;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .btn-cta {
+            background: white;
+            color: #11998e;
+            padding: 22px 60px;
+            border-radius: 50px;
+            font-size: 1.4rem;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.4s ease;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 1;
+        }
+        
+        .btn-cta:hover {
+            transform: scale(1.08) translateY(-3px);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+        }
+        .top-bar {
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            padding: 18px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .top-bar h1 {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 1.8rem;
+            font-weight: 800;
+        }
+        
+        .btn-top {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-top:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        
+        /* Floating elements */
+        .float-element {
+            position: absolute;
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        .trust-badges {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-top: 50px;
+            flex-wrap: wrap;
+        }
+        
+        .trust-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+        
+        .trust-badge svg {
+            width: 24px;
+            height: 24px;
+            fill: #ffd700;
+        }
+    </style>
+</head>
+<body>
+    <div class="grid-bg"></div>
+    
+    <div class="top-bar animate-fadeInUp">
+        <h1>CPA HUB</h1>
+        <a href="/login.html" class="btn-top">Entrar / Cadastrar</a>
+    </div>
+
+    <div class="hero">
+        <h1 class="animate-fadeInUp">Ganhe <span class="hero-highlight">Dinheiro Real</span></h1>
+        <p class="hero-subtitle animate-fadeInUp animate-delay-1">Complete ofertas simples e receba via Pix</p>
+        
+        <div class="hero-stats animate-fadeInUp animate-delay-2">
+            <div class="hero-stat">
+                <span class="hero-stat-number">R$ 50+</span>
+                <span class="hero-stat-label">por oferta</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-number">100%</span>
+                <span class="hero-stat-label">gratuito</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-number">Pix</span>
+                <span class="hero-stat-label">saque rápido</span>
+            </div>
+        </div>
+        
+        <a href="/login.html" class="btn-hero animate-fadeInUp animate-delay-3">🚀 COMEÇAR AGORA</a>
+        
+        <div class="trust-badges animate-fadeInUp animate-delay-4">
+            <div class="trust-badge">
+                <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                100% Seguro
+            </div>
+            <div class="trust-badge">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                Sem compra obrigatória
+            </div>
+            <div class="trust-badge">
+                <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+                Paga em 24h
+            </div>
+        </div>
+    </div>
+
+    <div class="how-it-works">
+        <div class="section-title animate-fadeInUp">
+            <h2>Como Funciona</h2>
+            <p class="highlight-green">4 passos simples para começar a ganhar</p>
+        </div>
+        <div class="steps">
+            <div class="step animate-fadeInUp animate-delay-1">
+                <div class="step-number">1</div>
+                <h3>Crie sua Conta</h3>
+                <p>Cadastre-se gratuitamente com seu nome, email e chave Pix para receber os pagamentos.</p>
+            </div>
+            <div class="step animate-fadeInUp animate-delay-2">
+                <div class="step-number">2</div>
+                <h3>Escolha Ofertas</h3>
+                <p>Selecione entre diversas ofertas disponíveis. Cada uma tem um valor de recompensa diferente.</p>
+            </div>
+            <div class="step animate-fadeInUp animate-delay-3">
+                <div class="step-number">3</div>
+                <h3>Complete Ações</h3>
+                <p>Clique na oferta, siga as instruções (cadastro, instalação, etc.) e aguarde aprovação.</p>
+            </div>
+            <div class="step animate-fadeInUp animate-delay-4">
+                <div class="step-number">4</div>
+                <h3>Receba no Pix</h3>
+                <p>Quando aprovado, o valor entra na sua carteira. Solicite saque quando quiser!</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="warning-box animate-fadeInUp">
+        <h3>⚠️ IMPORTANTE - Leia Antes de Começar</h3>
+        <ul>
+            <li><strong>Sem Compra Obrigatória:</strong> Você NUNCA precisa comprar nada. Só ganha se SE QUISER e se cadastrar em algo do seu interesse.</li>
+            <li><strong>Sistema Técnico:</strong> Este é um sistema de tracking CPA profissional, não cria dinheiro mágico.</li>
+            <li><strong>Conversões Reais:</strong> Você só ganha quando a rede CPA (JoinAds) confirma a conversão via postback.</li>
+            <li><strong>Regras da Rede:</strong> Cada oferta tem regras específicas. Leia atentamente antes de participar.</li>
+            <li><strong>Saque Mínimo:</strong> O valor mínimo para saque é R$ 10,00.</li>
+            <li><strong>Aprovação Manual:</strong> Saques passam por revisão antes do pagamento.</li>
+        </ul>
+    </div>
+
+    <div class="cta-section">
+        <h2>Pronto para começar?</h2>
+        <p>Crie sua conta gratuita agora mesmo e comece a ganhar!</p>
+        <a href="/login.html" class="btn-cta">CRIAR CONTA GRÁTIS →</a>
+    </div>
+
+</body>
+</html>
