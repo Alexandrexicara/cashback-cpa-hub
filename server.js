@@ -1,5 +1,5 @@
 const express = require("express");
-const Database = require("better-sqlite3");
+const { Pool } = require("pg");
 const cors = require("cors");
 const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
@@ -11,312 +11,424 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
+// PostgreSQL connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || "postgresql://localhost:5432/cpahub",
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || "cpahub-secret-key";
 
-const db = new Database("./cpahub.db");
-console.log("SQLite (better-sqlite3) conectado com sucesso");
-initDB();
+async function initDB() {
+  try {
+    console.log("Conectando ao PostgreSQL...");
+    
+    // Criar tabelas se não existirem
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        subid VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        pix_key VARCHAR(255) NOT NULL,
+        balance DECIMAL(10,2) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-function initDB() {
-    const tableStatements = [
-        `CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE,
-            password TEXT,
-            subid TEXT UNIQUE,
-            balance REAL DEFAULT 0,
-            pix_key TEXT,
-            ip_address TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`,
-        `CREATE TABLE IF NOT EXISTS offers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            desc TEXT,
-            payout REAL DEFAULT 0,
-            link TEXT NOT NULL,
-            active INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`,
-        `CREATE TABLE IF NOT EXISTS clicks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT,
-            offer_id INTEGER,
-            subid TEXT,
-            ip_address TEXT,
-            user_agent TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (offer_id) REFERENCES offers(id)
-        )`,
-        `CREATE TABLE IF NOT EXISTS conversions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            subid TEXT,
-            offer_id INTEGER,
-            payout REAL,
-            status TEXT DEFAULT 'approved',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(subid, offer_id)
-        )`,
-        `CREATE TABLE IF NOT EXISTS withdrawals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT,
-            pix_key TEXT NOT NULL,
-            amount REAL NOT NULL,
-            status TEXT DEFAULT 'pending',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )`
-    ];
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS offers (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        payout DECIMAL(10,2) NOT NULL,
+        url VARCHAR(500) NOT NULL,
+        active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-    tableStatements.forEach((sql) => db.prepare(sql).run());
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS clicks (
+        id SERIAL PRIMARY KEY,
+        subid VARCHAR(36) NOT NULL,
+        offer_id INTEGER NOT NULL,
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (subid) REFERENCES users(subid),
+        FOREIGN KEY (offer_id) REFERENCES offers(id)
+      )
+    `);
 
-    const { count } = db.prepare("SELECT COUNT(*) as count FROM offers").get();
-    if (count === 0) {
-        db.prepare(`INSERT INTO offers (title, desc, payout, link) VALUES (?, ?, ?, ?)`)
-            .run("Cadastro R�pido", "Complete o cadastro e ganhe recompensa", 5.0, "https://JOINADS-LINK.com?subid=");
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversions (
+        id SERIAL PRIMARY KEY,
+        subid VARCHAR(36) NOT NULL,
+        offer_id INTEGER NOT NULL,
+        payout DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (subid) REFERENCES users(subid),
+        FOREIGN KEY (offer_id) REFERENCES offers(id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS withdrawals (
+        id SERIAL PRIMARY KEY,
+        subid VARCHAR(36) NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        pix_key VARCHAR(255) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP,
+        FOREIGN KEY (subid) REFERENCES users(subid)
+      )
+    `);
+
+    console.log("PostgreSQL conectado com sucesso!");
+    
+    // Inserir ofertas de exemplo
+    const offersCount = await pool.query("SELECT COUNT(*) FROM offers");
+    if (offersCount.rows[0].count === '0') {
+      await pool.query(`
+        INSERT INTO offers (name, description, payout, url) VALUES
+        ('Cadastro App', 'Baixe e cadastre-se no aplicativo', 15.00, 'https://example.com/app'),
+        ('Newsletter', 'Inscreva-se na newsletter', 2.50, 'https://example.com/newsletter'),
+        ('Survey Premium', 'Complete pesquisa premium', 8.00, 'https://example.com/survey'),
+        ('Game Download', 'Baixe e jogue por 10 minutos', 12.00, 'https://example.com/game')
+      `);
+      console.log("Ofertas de exemplo inseridas!");
     }
+    
+  } catch (error) {
+    console.error("Erro ao inicializar banco:", error);
+  }
 }
 
-function checkFraud(subid, ip, offerId) {
-    const row = db.prepare("SELECT COUNT(*) as count FROM clicks WHERE ip_address = ? AND offer_id = ? AND subid != ?").get(ip, offerId, subid);
-    return row.count > 0;
+// Middleware de autenticação
+function authMiddleware(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Token não fornecido" });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Token inválido" });
+  }
 }
 
-app.post("/register", (req, res) => {
-    const { name, email, password, pix_key } = req.body;
+// Registrar usuário
+app.post("/register", async (req, res) => {
+  const { name, email, password, pix_key } = req.body;
+
+  if (!name || !email || !password || !pix_key) {
+    return res.status(400).json({ error: "Preencha todos os campos" });
+  }
+
+  try {
+    const existingUser = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: "Email já cadastrado" });
+    }
+
     const subid = uuidv4();
-    const hashedPassword = password ? bcrypt.hashSync(password, 10) : null;
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const hashedPassword = bcrypt.hashSync(password, 10);
 
-    try {
-        db.prepare(`INSERT INTO users (id, name, email, password, subid, pix_key, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-            .run(uuidv4(), name, email || null, hashedPassword, subid, pix_key || null, ip);
-        res.json({ subid, name, balance: 0 });
-    } catch (err) {
-        if (err.code === "SQLITE_CONSTRAINT_UNIQUE") {
-            return res.status(400).json({ error: "Email j� cadastrado" });
-        }
-        return res.status(500).json({ error: err.message });
-    }
+    await pool.query(
+      "INSERT INTO users (subid, name, email, password, pix_key) VALUES ($1, $2, $3, $4, $5)",
+      [subid, name, email, hashedPassword, pix_key]
+    );
+
+    res.json({ subid, name, balance: 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.post("/login", (req, res) => {
-    const { email, password } = req.body;
+// Login
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
 
-    try {
-        const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
-        if (!user) return res.status(404).json({ error: "Usu�rio n�o encontrado" });
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    const user = result.rows[0];
 
-        if (password && !bcrypt.compareSync(password, user.password)) {
-            return res.status(401).json({ error: "Senha incorreta" });
-        }
-
-        const token = jwt.sign({ subid: user.subid, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
-        res.json({ token, subid: user.subid, name: user.name, balance: user.balance });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    if (!user) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
     }
+
+    if (!bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: "Senha incorreta" });
+    }
+
+    const token = jwt.sign(
+      { subid: user.subid, name: user.name },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({ token, subid: user.subid, name: user.name, balance: user.balance });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.post("/reset-password", (req, res) => {
-    const { email } = req.body;
-    if (!email) {
-        return res.status(400).json({ error: "Email obrigat�rio" });
+// Redefinir senha
+app.post("/reset-password", async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: "Email obrigatório" });
+  }
+
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    const user = result.rows[0];
+
+    if (!user) {
+      return res.json({ 
+        message: "Se este email estiver cadastrado, você receberá uma nova senha em breve." 
+      });
     }
 
-    try {
-        const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
-        if (!user) {
-            return res.json({ message: "Se este email estiver cadastrado, voc� receber� uma nova senha em breve." });
-        }
+    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
+    const hashedPassword = bcrypt.hashSync(tempPassword, 10);
 
-        const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
-        const hashedPassword = bcrypt.hashSync(tempPassword, 10);
-        db.prepare("UPDATE users SET password = ? WHERE email = ?").run(hashedPassword, email);
+    await pool.query("UPDATE users SET password = $1 WHERE email = $2", [hashedPassword, email]);
 
-        console.log(`?? Nova senha para ${email}: ${tempPassword}`);
-        res.json({
-            message: "Senha redefinida com sucesso!",
-            tempPassword,
-            note: "Em produ��o, esta senha seria enviada por email"
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    console.log(`Nova senha para ${email}: ${tempPassword}`);
+
+    res.json({ 
+      message: "Senha redefinida com sucesso!",
+      tempPassword: tempPassword,
+      note: "Em produção, esta senha seria enviada por email"
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao redefinir senha" });
+  }
 });
 
-app.get("/offers", (req, res) => {
-    try {
-        const rows = db.prepare("SELECT * FROM offers WHERE active = 1").all();
-        res.json(rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+// Listar ofertas
+app.get("/offers", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM offers WHERE active = true ORDER BY payout DESC");
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get("/click/:offerId/:subid", (req, res) => {
-    const { offerId, subid } = req.params;
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-    const userAgent = req.headers["user-agent"];
+// Tracking de clique
+app.get("/click/:offerId/:subid", async (req, res) => {
+  const { offerId, subid } = req.params;
+  const ip = req.ip;
+  const userAgent = req.get('User-Agent');
 
-    try {
-        const user = db.prepare("SELECT * FROM users WHERE subid = ?").get(subid);
-        if (!user) return res.status(404).send("Usu�rio n�o encontrado");
+  try {
+    await pool.query(
+      "INSERT INTO clicks (subid, offer_id, ip_address, user_agent) VALUES ($1, $2, $3, $4)",
+      [subid, offerId, ip, userAgent]
+    );
 
-        const offer = db.prepare("SELECT * FROM offers WHERE id = ?").get(offerId);
-        if (!offer) return res.status(404).send("Oferta n�o encontrada");
-
-        db.prepare(`INSERT INTO clicks (user_id, offer_id, subid, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)`)
-            .run(user.id, offerId, subid, ip, userAgent);
-
-        res.redirect(offer.link + subid);
-    } catch (err) {
-        res.status(500).send(err.message);
+    const offer = await pool.query("SELECT url FROM offers WHERE id = $1", [offerId]);
+    if (offer.rows.length > 0) {
+      res.redirect(offer.rows[0].url);
+    } else {
+      res.status(404).send("Oferta não encontrada");
     }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get("/postback", (req, res) => {
-    const { subid, status, offer_id, payout } = req.query;
-    if (status !== "approved") return res.send("ignored");
+// Postback de conversão
+app.post("/postback", async (req, res) => {
+  const { subid, offer_id, payout, status = 'approved' } = req.body;
 
-    try {
-        const existing = db.prepare("SELECT * FROM conversions WHERE subid = ? AND offer_id = ?").get(subid, offer_id);
-        if (existing) return res.send("already counted");
+  try {
+    // Verificar se já existe conversão
+    const existing = await pool.query(
+      "SELECT * FROM conversions WHERE subid = $1 AND offer_id = $2",
+      [subid, offer_id]
+    );
 
-        const user = db.prepare("SELECT * FROM users WHERE subid = ?").get(subid);
-        if (!user) return res.send("user not found");
+    if (existing.rows.length === 0) {
+      // Adicionar conversão
+      await pool.query(
+        "INSERT INTO conversions (subid, offer_id, payout, status) VALUES ($1, $2, $3, $4)",
+        [subid, offer_id, payout, status]
+      );
 
-        const payoutValue = parseFloat(payout) || 0;
-        db.prepare(`INSERT INTO conversions (subid, offer_id, payout) VALUES (?, ?, ?)`)
-            .run(subid, offer_id, payoutValue);
-        db.prepare(`UPDATE users SET balance = balance + ? WHERE subid = ?`).run(payoutValue, subid);
-
-        res.send("ok");
-    } catch (err) {
-        res.status(500).send("error");
+      // Atualizar saldo do usuário se aprovado
+      if (status === 'approved') {
+        await pool.query(
+          "UPDATE users SET balance = balance + $1 WHERE subid = $2",
+          [payout, subid]
+        );
+      }
     }
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get("/balance/:subid", (req, res) => {
-    try {
-        const row = db.prepare("SELECT balance, name FROM users WHERE subid = ?").get(req.params.subid);
-        if (!row) return res.status(404).json({ error: "Usu�rio n�o encontrado" });
-        res.json({ balance: row.balance, name: row.name });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+// Dashboard do usuário
+app.get("/dashboard", authMiddleware, async (req, res) => {
+  const { subid } = req.user;
+
+  try {
+    const userResult = await pool.query("SELECT * FROM users WHERE subid = $1", [subid]);
+    const user = userResult.rows[0];
+
+    const conversionsResult = await pool.query(
+      "SELECT * FROM conversions WHERE subid = $1 ORDER BY created_at DESC LIMIT 10",
+      [subid]
+    );
+
+    const withdrawalsResult = await pool.query(
+      "SELECT * FROM withdrawals WHERE subid = $1 ORDER BY created_at DESC LIMIT 10",
+      [subid]
+    );
+
+    res.json({
+      user: {
+        name: user.name,
+        balance: user.balance,
+        pix_key: user.pix_key
+      },
+      conversions: conversionsResult.rows,
+      withdrawals: withdrawalsResult.rows
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.post("/withdraw", (req, res) => {
-    const { subid, pix_key, amount } = req.body;
-    if (!pix_key || !amount || amount <= 0) {
-        return res.status(400).json({ error: "Dados inv�lidos" });
+// Solicitar saque
+app.post("/withdraw", authMiddleware, async (req, res) => {
+  const { subid } = req.user;
+  const { amount, pix_key } = req.body;
+
+  try {
+    const userResult = await pool.query("SELECT * FROM users WHERE subid = $1", [subid]);
+    const user = userResult.rows[0];
+
+    if (user.balance < amount) {
+      return res.status(400).json({ error: "Saldo insuficiente" });
     }
 
-    try {
-        const user = db.prepare("SELECT * FROM users WHERE subid = ?").get(subid);
-        if (!user) return res.status(404).json({ error: "Usu�rio n�o encontrado" });
-        if (user.balance < amount) return res.status(400).json({ error: "Saldo insuficiente" });
-
-        db.prepare(`UPDATE users SET balance = balance - ? WHERE subid = ?`).run(amount, subid);
-        const result = db.prepare(`INSERT INTO withdrawals (user_id, pix_key, amount) VALUES (?, ?, ?)`)
-            .run(user.id, pix_key, amount);
-
-        res.json({
-            message: "Saque solicitado com sucesso",
-            id: result.lastInsertRowid,
-            status: "pending",
-            amount
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    if (amount < 10) {
+      return res.status(400).json({ error: "Valor mínimo para saque é R$ 10,00" });
     }
+
+    await pool.query(
+      "INSERT INTO withdrawals (subid, amount, pix_key) VALUES ($1, $2, $3)",
+      [subid, amount, pix_key || user.pix_key]
+    );
+
+    res.json({ success: true, message: "Saque solicitado com sucesso!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get("/withdrawals/:subid", (req, res) => {
-    try {
-        const user = db.prepare("SELECT id FROM users WHERE subid = ?").get(req.params.subid);
-        if (!user) return res.status(404).json({ error: "Usu�rio n�o encontrado" });
+// Admin Panel
+app.get("/admin/stats", async (req, res) => {
+  try {
+    const users = await pool.query("SELECT COUNT(*) as total FROM users");
+    const offers = await pool.query("SELECT COUNT(*) as total FROM offers");
+    const conversions = await pool.query("SELECT COUNT(*) as total, COALESCE(SUM(payout), 0) as total_payout FROM conversions");
+    const withdrawals = await pool.query("SELECT COUNT(*) as total, COALESCE(SUM(amount), 0) as total_amount FROM withdrawals WHERE status = 'approved'");
 
-        const rows = db.prepare("SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC").all(user.id);
-        res.json(rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    res.json({
+      users: users.rows[0].total,
+      offers: offers.rows[0].total,
+      conversions: conversions.rows[0].total,
+      totalPayout: conversions.rows[0].total_payout,
+      withdrawals: withdrawals.rows[0].total,
+      totalWithdrawn: withdrawals.rows[0].total_amount
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get("/admin/users", (req, res) => {
-    try {
-        const rows = db.prepare("SELECT subid, name, email, balance, created_at FROM users").all();
-        res.json(rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+// Adicionar oferta
+app.post("/admin/offers", async (req, res) => {
+  const { name, description, payout, url } = req.body;
+
+  try {
+    await pool.query(
+      "INSERT INTO offers (name, description, payout, url) VALUES ($1, $2, $3, $4)",
+      [name, description, payout, url]
+    );
+
+    res.json({ success: true, message: "Oferta adicionada com sucesso!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get("/admin/stats", (req, res) => {
-    try {
-        const users = db.prepare("SELECT COUNT(*) as total_users FROM users").get();
-        const clicks = db.prepare("SELECT COUNT(*) as total_clicks FROM clicks").get();
-        const conversions = db.prepare("SELECT COUNT(*) as total_conversions FROM conversions").get();
-        const paid = db.prepare("SELECT SUM(payout) as total_paid FROM conversions").get();
-        const pending = db.prepare("SELECT SUM(amount) as pending_withdrawals FROM withdrawals WHERE status = 'pending'").get();
-
-        res.json({
-            users: users.total_users,
-            clicks: clicks.total_clicks,
-            conversions: conversions.total_conversions,
-            total_paid: paid.total_paid || 0,
-            pending_withdrawals: pending.pending_withdrawals || 0
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+// Listar saques pendentes
+app.get("/admin/withdrawals", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT w.*, u.name, u.email 
+      FROM withdrawals w 
+      JOIN users u ON w.subid = u.subid 
+      WHERE w.status = 'pending' 
+      ORDER BY w.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get("/admin/withdrawals", (req, res) => {
-    try {
-        const rows = db.prepare(`
-            SELECT w.*, u.name, u.email FROM withdrawals w 
-            JOIN users u ON w.user_id = u.id 
-            WHERE w.status = 'pending' ORDER BY w.created_at DESC
-        `).all();
-        res.json(rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+// Aprovar/rejeitar saque
+app.post("/admin/withdrawals/:id/process", async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body; // 'approved' ou 'rejected'
+
+  try {
+    const withdrawalResult = await pool.query("SELECT * FROM withdrawals WHERE id = $1", [id]);
+    const withdrawal = withdrawalResult.rows[0];
+
+    if (!withdrawal) {
+      return res.status(404).json({ error: "Saque não encontrado" });
     }
+
+    await pool.query(
+      "UPDATE withdrawals SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE id = $2",
+      [status, id]
+    );
+
+    if (status === 'approved') {
+      await pool.query(
+        "UPDATE users SET balance = balance - $1 WHERE subid = $2",
+        [withdrawal.amount, withdrawal.subid]
+      );
+    }
+
+    res.json({ success: true, message: `Saque ${status === 'approved' ? 'aprovado' : 'rejeitado'} com sucesso!` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.post("/admin/withdrawals/:id", (req, res) => {
-    const { status } = req.body;
-    try {
-        db.prepare("UPDATE withdrawals SET status = ? WHERE id = ?").run(status, req.params.id);
-        res.json({ message: `Saque ${status}` });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post("/admin/offers", (req, res) => {
-    const { title, desc, payout, link } = req.body;
-    try {
-        const result = db.prepare(`
-            INSERT INTO offers (title, desc, payout, link) VALUES (?, ?, ?, ?)`
-        ).run(title, desc, payout, link);
-        res.json({ id: result.lastInsertRowid, title, desc, payout, link });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log('╔════════════════════════════════════════╝');
-    console.log('║     CPA Hub Pro v2.0 - Ativo!          ║');
-    console.log('╠════════════════════════════════════════╣');
-    console.log(`║  ➜  Local:   http://localhost:${PORT}       ║`);
-    console.log(`║  ➜  Rede:    http://0.0.0.0:${PORT}         ║`);
-    console.log('╚════════════════════════════════════════╝');
+// Inicializar e iniciar servidor
+initDB().then(() => {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('CPA Hub Pro v2.0 - PostgreSQL Edition!');
+    console.log(`Local:   http://localhost:${PORT}`);
+    console.log(`Rede:    http://0.0.0.0:${PORT}`);
+    console.log('Banco: PostgreSQL');
+  });
 });
