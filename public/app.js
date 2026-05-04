@@ -29,10 +29,10 @@ function loadDashboard() {
 
             div.innerHTML = data.map(o => `
                 <div class="offer-card">
-                    <h3>${o.title}</h3>
-                    <p>${o.desc}</p>
+                    <h3>${o.name}</h3>
+                    <p>${o.description}</p>
                     <div class="offer-footer">
-                        <span class="payout">R$ ${o.payout.toFixed(2)}</span>
+                        <span class="payout">R$ ${Number(o.payout).toFixed(2)}</span>
                         <a href="/click/${o.id}/${subid}" class="btn-participate">
                             Participar
                         </a>

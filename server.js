@@ -94,10 +94,12 @@ async function initDB() {
     if (offersCount.rows[0].count === '0') {
       await pool.query(`
         INSERT INTO offers (name, description, payout, url) VALUES
-        ('Cadastro App', 'Baixe e cadastre-se no aplicativo', 15.00, 'https://example.com/app'),
-        ('Newsletter', 'Inscreva-se na newsletter', 2.50, 'https://example.com/newsletter'),
-        ('Survey Premium', 'Complete pesquisa premium', 8.00, 'https://example.com/survey'),
-        ('Game Download', 'Baixe e jogue por 10 minutos', 12.00, 'https://example.com/game')
+        ('Cadastro App', 'Baixe e cadastre-se no aplicativo', 7.50, 'https://example.com/app'),
+        ('Newsletter', 'Inscreva-se na newsletter', 1.25, 'https://example.com/newsletter'),
+        ('Survey Premium', 'Complete pesquisa premium', 4.00, 'https://example.com/survey'),
+        ('Game Download', 'Baixe e jogue por 10 minutos', 6.00, 'https://example.com/game'),
+        ('CPM Rate - Oferta 1', 'Acesse e complete a ação', 2.50, 'https://www.profitablecpmratenetwork.com/vcpsex7j?key=ea100a06628342c17727f2aab9085f84'),
+        ('CPM Rate - Oferta 2', 'Acesse e complete a ação', 2.50, 'https://www.profitablecpmratenetwork.com/m2hrrq9r?key=6f785b34ecaaddc65bc4237698a10e0b')
       `);
       console.log("Ofertas de exemplo inseridas!");
     }
