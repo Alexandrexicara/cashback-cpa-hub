@@ -94,9 +94,7 @@ function initDB() {
           ['Cadastro App', 'Baixe e cadastre-se no aplicativo', 7.50, 'https://example.com/app'],
           ['Newsletter', 'Inscreva-se na newsletter', 1.25, 'https://example.com/newsletter'],
           ['Survey Premium', 'Complete pesquisa premium', 4.00, 'https://example.com/survey'],
-          ['Game Download', 'Baixe e jogue por 10 minutos', 6.00, 'https://example.com/game'],
-          ['CPM Rate - Oferta 1', 'Acesse e complete a ação', 2.50, 'https://www.profitablecpmratenetwork.com/vcpsex7j?key=ea100a06628342c17727f2aab9085f84'],
-          ['CPM Rate - Oferta 2', 'Acesse e complete a ação', 2.50, 'https://www.profitablecpmratenetwork.com/m2hrrq9r?key=6f785b34ecaaddc65bc4237698a10e0b']
+          ['Game Download', 'Baixe e jogue por 10 minutos', 6.00, 'https://example.com/game']
         ];
 
         offers.forEach(offer => {
@@ -207,8 +205,29 @@ app.post("/reset-password", (req, res) => {
 app.get("/offers", (req, res) => {
   db.all("SELECT * FROM offers WHERE active = 1 ORDER BY payout DESC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    res.json((rows || []).map(o => ({ ...o, payout: Number(o.payout) })));
   });
+});
+
+// Saldo do usuário
+app.get("/balance/:subid", (req, res) => {
+  db.get("SELECT balance FROM users WHERE subid = ?", [req.params.subid], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json({ balance: Number(row.balance) });
+  });
+});
+
+// Histórico de saques do usuário
+app.get("/withdrawals/:subid", (req, res) => {
+  db.all(
+    "SELECT * FROM withdrawals WHERE subid = ? ORDER BY created_at DESC",
+    [req.params.subid],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json((rows || []).map(w => ({ ...w, amount: Number(w.amount) })));
+    }
+  );
 });
 
 // Tracking de clique
@@ -287,19 +306,23 @@ app.get("/dashboard", authMiddleware, (req, res) => {
   });
 });
 
-// Solicitar saque
-app.post("/withdraw", authMiddleware, (req, res) => {
-  const { subid } = req.user;
-  const { amount, pix_key } = req.body;
+// Solicitar saque (sem auth, usa subid do body)
+app.post("/withdraw", (req, res) => {
+  const { subid, amount, pix_key } = req.body;
+
+  if (!subid || !amount) {
+    return res.status(400).json({ error: "subid e amount são obrigatórios" });
+  }
 
   db.get("SELECT * FROM users WHERE subid = ?", [subid], (err, user) => {
     if (err) return res.status(500).json({ error: err.message });
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado" });
 
-    if (user.balance < amount) {
+    if (Number(user.balance) < Number(amount)) {
       return res.status(400).json({ error: "Saldo insuficiente" });
     }
 
-    if (amount < 10) {
+    if (Number(amount) < 10) {
       return res.status(400).json({ error: "Valor mínimo para saque é R$ 10,00" });
     }
 
@@ -319,22 +342,31 @@ app.get("/admin/stats", (req, res) => {
   db.get("SELECT COUNT(*) as total FROM users", [], (err, users) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    db.get("SELECT COUNT(*) as total FROM offers", [], (err, offers) => {
+    db.get("SELECT COUNT(*) as total FROM clicks", [], (err, clicks) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      db.get("SELECT COUNT(*) as total, COALESCE(SUM(payout), 0) as total_payout FROM conversions", [], (err, conversions) => {
+      db.get("SELECT COUNT(*) as total, COALESCE(SUM(payout), 0) as total_earned FROM conversions WHERE status = 'approved'", [], (err, conversions) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        db.get("SELECT COUNT(*) as total, COALESCE(SUM(amount), 0) as total_amount FROM withdrawals WHERE status = 'approved'", [], (err, withdrawals) => {
+        db.get("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'approved'", [], (err, paid) => {
           if (err) return res.status(500).json({ error: err.message });
 
-          res.json({
-            users: users.total,
-            offers: offers.total,
-            conversions: conversions.total,
-            totalPayout: conversions.total_payout,
-            withdrawals: withdrawals.total,
-            totalWithdrawn: withdrawals.total_amount
+          db.get("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'pending'", [], (err, pending) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            db.get("SELECT COALESCE(SUM(balance), 0) as total FROM users", [], (err, balanceTotal) => {
+              if (err) return res.status(500).json({ error: err.message });
+
+              res.json({
+                users: Number(users.total),
+                clicks: Number(clicks.total),
+                conversions: Number(conversions.total),
+                total_earned: Number(conversions.total_earned),
+                total_paid: Number(paid.total),
+                pending_withdrawals: Number(pending.total),
+                user_balance_total: Number(balanceTotal.total)
+              });
+            });
           });
         });
       });
@@ -342,13 +374,49 @@ app.get("/admin/stats", (req, res) => {
   });
 });
 
-// Adicionar oferta
+// Listar ofertas (admin vê todas)
+app.get("/admin/offers", (req, res) => {
+  db.all("SELECT * FROM offers ORDER BY created_at DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json((rows || []).map(o => ({ ...o, payout: Number(o.payout) })));
+  });
+});
+
+// Remover oferta
+app.delete("/admin/offers/:id", (req, res) => {
+  db.run("DELETE FROM offers WHERE id = ?", [req.params.id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ success: true });
+  });
+});
+
+// Listar usuários
+app.get("/admin/users", (req, res) => {
+  db.all(
+    "SELECT subid, name, email, balance, created_at FROM users ORDER BY created_at DESC",
+    [],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const users = (rows || []).map(u => ({ ...u, balance: Number(u.balance) }));
+      res.json(users);
+    }
+  );
+});
+
+// Adicionar oferta (aceita {name,description,url} ou {title,desc,link})
 app.post("/admin/offers", (req, res) => {
-  const { name, description, payout, url } = req.body;
+  const { name, title, description, desc, payout, url, link } = req.body;
+  const offerName = name || title;
+  const offerDesc = description || desc;
+  const offerUrl = url || link;
+
+  if (!offerName || !offerDesc || payout == null || !offerUrl) {
+    return res.status(400).json({ error: "Preencha todos os campos" });
+  }
 
   db.run(
     "INSERT INTO offers (name, description, payout, url) VALUES (?, ?, ?, ?)",
-    [name, description, payout, url],
+    [offerName, offerDesc, payout, offerUrl],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ success: true, message: "Oferta adicionada com sucesso!" });
@@ -366,12 +434,13 @@ app.get("/admin/withdrawals", (req, res) => {
     ORDER BY w.created_at DESC
   `, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    const withdrawals = (rows || []).map(w => ({ ...w, amount: Number(w.amount) }));
+    res.json(withdrawals);
   });
 });
 
 // Aprovar/rejeitar saque
-app.post("/admin/withdrawals/:id/process", (req, res) => {
+app.post("/admin/withdrawals/:id", (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 

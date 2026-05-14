@@ -26,6 +26,29 @@
             border-radius: 4px;
             cursor: pointer;
         }
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .offer-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-bottom: 1px solid #eee;
+        }
+        .offer-row .payout-tag {
+            background: #28a745;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -41,10 +64,16 @@
                 <div class="form-grid">
                     <input type="text" id="offerTitle" placeholder="Título da oferta" class="input-field">
                     <input type="text" id="offerDesc" placeholder="Descrição" class="input-field">
-                    <input type="number" id="offerPayout" placeholder="Payout (R$)" class="input-field">
+                    <input type="number" id="offerPayout" placeholder="Payout - Valor pago ao usuário (R$)" class="input-field" step="0.01" min="0.01">
                     <input type="text" id="offerLink" placeholder="Link da oferta (com ?subid= no final)" class="input-field">
                     <button onclick="addOffer()" class="btn-primary">Adicionar Oferta</button>
                 </div>
+                <p style="margin-top:10px;color:#666;font-size:0.9rem;">ℹ️ O valor do <strong>Payout</strong> é quanto você pagará ao usuário a cada conclusão desta tarefa.</p>
+            </section>
+
+            <section class="admin-section">
+                <h2>Ofertas Cadastradas (Valor por tarefa)</h2>
+                <div id="offersList" class="data-list"></div>
             </section>
 
             <section class="admin-section">
@@ -62,13 +91,21 @@
                         <h3>Conversões</h3>
                         <p id="totalConversions">0</p>
                     </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                        <h3>Usuários Ganharam</h3>
+                        <p id="totalEarned">R$ 0</p>
+                    </div>
                     <div class="stat-card">
-                        <h3>Total Pago</h3>
+                        <h3>Total Pago (Saques)</h3>
                         <p id="totalPaid">R$ 0</p>
                     </div>
                     <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
                         <h3>Saques Pendentes</h3>
                         <p id="pendingWithdrawals">R$ 0</p>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);">
+                        <h3>Saldo a Pagar</h3>
+                        <p id="userBalanceTotal">R$ 0</p>
                     </div>
                 </div>
             </section>
@@ -93,7 +130,7 @@
             const link = document.getElementById("offerLink").value;
 
             if (!title || !desc || !payout || !link) {
-                alert("Preencha todos os campos");
+                alert("Preencha todos os campos (incluindo o valor que será pago ao usuário)");
                 return;
             }
 
@@ -103,13 +140,22 @@
                 body: JSON.stringify({ title, desc, payout, link })
             })
             .then(r => r.json())
-            .then(() => {
-                alert("Oferta adicionada!");
+            .then(res => {
+                if (res.error) { alert(res.error); return; }
+                alert(`Oferta adicionada! Você pagará R$ ${payout.toFixed(2)} por conclusão.`);
                 document.getElementById("offerTitle").value = "";
                 document.getElementById("offerDesc").value = "";
                 document.getElementById("offerPayout").value = "";
                 document.getElementById("offerLink").value = "";
+                loadAdmin();
             });
+        }
+
+        function deleteOffer(id) {
+            if (!confirm("Remover esta oferta?")) return;
+            fetch(`/admin/offers/${id}`, { method: "DELETE" })
+                .then(r => r.json())
+                .then(() => loadAdmin());
         }
 
         function processWithdrawal(id, status) {
@@ -133,8 +179,31 @@
                     document.getElementById("totalUsers").textContent = stats.users;
                     document.getElementById("totalClicks").textContent = stats.clicks;
                     document.getElementById("totalConversions").textContent = stats.conversions;
-                    document.getElementById("totalPaid").textContent = `R$ ${stats.total_paid.toFixed(2)}`;
-                    document.getElementById("pendingWithdrawals").textContent = `R$ ${stats.pending_withdrawals.toFixed(2)}`;
+                    document.getElementById("totalEarned").textContent = `R$ ${Number(stats.total_earned || 0).toFixed(2)}`;
+                    document.getElementById("totalPaid").textContent = `R$ ${Number(stats.total_paid || 0).toFixed(2)}`;
+                    document.getElementById("pendingWithdrawals").textContent = `R$ ${Number(stats.pending_withdrawals || 0).toFixed(2)}`;
+                    document.getElementById("userBalanceTotal").textContent = `R$ ${Number(stats.user_balance_total || 0).toFixed(2)}`;
+                });
+
+            // Ofertas cadastradas (com valor de cada campanha)
+            fetch("/admin/offers")
+                .then(r => r.json())
+                .then(offers => {
+                    const list = document.getElementById("offersList");
+                    if (!offers.length) {
+                        list.innerHTML = "<p class='no-data'>Nenhuma oferta cadastrada ainda.</p>";
+                        return;
+                    }
+                    list.innerHTML = offers.map(o => `
+                        <div class="offer-row">
+                            <div>
+                                <strong>${o.name}</strong>
+                                <div style="font-size:0.85rem;color:#666;">${o.description || ''}</div>
+                            </div>
+                            <span class="payout-tag">Paga R$ ${Number(o.payout).toFixed(2)}</span>
+                            <button class="btn-delete" onclick="deleteOffer(${o.id})">Remover</button>
+                        </div>
+                    `).join("");
                 });
 
             // Saques pendentes
@@ -142,14 +211,14 @@
                 .then(r => r.json())
                 .then(withdrawals => {
                     const list = document.getElementById("withdrawalsList");
-                    if (withdrawals.length === 0) {
+                    if (!Array.isArray(withdrawals) || withdrawals.length === 0) {
                         list.innerHTML = "<p class='no-data'>Nenhum saque pendente.</p>";
                         return;
                     }
                     
                     list.innerHTML = withdrawals.map(w => `
                         <div class="data-item">
-                            <span>${w.name} - R$ ${w.amount.toFixed(2)}</span>
+                            <span>${w.name} - R$ ${Number(w.amount).toFixed(2)}</span>
                             <span>${w.pix_key}</span>
                             <div class="withdrawal-action">
                                 <button class="btn-approve" onclick="processWithdrawal(${w.id}, 'approved')">✓ Aprovar</button>
@@ -164,11 +233,15 @@
                 .then(r => r.json())
                 .then(users => {
                     const usersList = document.getElementById("usersList");
+                    if (!Array.isArray(users) || users.length === 0) {
+                        usersList.innerHTML = "<p class='no-data'>Nenhum usuário cadastrado.</p>";
+                        return;
+                    }
                     usersList.innerHTML = users.map(u => `
                         <div class="data-item">
                             <span>${u.name} (${u.email || 'sem email'})</span>
                             <span>SubID: ${u.subid.substring(0, 8)}...</span>
-                            <span>R$ ${u.balance.toFixed(2)}</span>
+                            <span>R$ ${Number(u.balance).toFixed(2)}</span>
                         </div>
                     `).join("");
                 });

@@ -8,7 +8,7 @@ function loadDashboard() {
     fetch(`/balance/${subid}`)
         .then(r => r.json())
         .then(data => {
-            const balance = data.balance || 0;
+            const balance = Number(data.balance) || 0;
             document.getElementById("balance").textContent = balance.toFixed(2);
             document.getElementById("modal-balance").textContent = balance.toFixed(2);
         })
@@ -60,7 +60,7 @@ function loadWithdrawals() {
 
             div.innerHTML = data.map(w => `
                 <div class="withdrawal-item ${w.status}">
-                    <span class="withdrawal-amount">R$ ${w.amount.toFixed(2)}</span>
+                    <span class="withdrawal-amount">R$ ${Number(w.amount).toFixed(2)}</span>
                     <span class="withdrawal-status ${w.status}">${w.status === 'pending' ? '⏳ Pendente' : w.status === 'approved' ? '✅ Aprovado' : '❌ Rejeitado'}</span>
                     <span class="withdrawal-date">${new Date(w.created_at).toLocaleDateString()}</span>
                 </div>
@@ -77,7 +77,7 @@ function openWithdrawModal() {
     fetch(`/balance/${subid}`)
         .then(r => r.json())
         .then(data => {
-            document.getElementById("modal-balance").textContent = (data.balance || 0).toFixed(2);
+            document.getElementById("modal-balance").textContent = (Number(data.balance) || 0).toFixed(2);
         });
 }
 

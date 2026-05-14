@@ -97,9 +97,7 @@ async function initDB() {
         ('Cadastro App', 'Baixe e cadastre-se no aplicativo', 7.50, 'https://example.com/app'),
         ('Newsletter', 'Inscreva-se na newsletter', 1.25, 'https://example.com/newsletter'),
         ('Survey Premium', 'Complete pesquisa premium', 4.00, 'https://example.com/survey'),
-        ('Game Download', 'Baixe e jogue por 10 minutos', 6.00, 'https://example.com/game'),
-        ('CPM Rate - Oferta 1', 'Acesse e complete a ação', 2.50, 'https://www.profitablecpmratenetwork.com/vcpsex7j?key=ea100a06628342c17727f2aab9085f84'),
-        ('CPM Rate - Oferta 2', 'Acesse e complete a ação', 2.50, 'https://www.profitablecpmratenetwork.com/m2hrrq9r?key=6f785b34ecaaddc65bc4237698a10e0b')
+        ('Game Download', 'Baixe e jogue por 10 minutos', 6.00, 'https://example.com/game')
       `);
       console.log("Ofertas de exemplo inseridas!");
     }
@@ -218,7 +216,33 @@ app.post("/reset-password", async (req, res) => {
 app.get("/offers", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM offers WHERE active = true ORDER BY payout DESC");
-    res.json(result.rows);
+    const offers = result.rows.map(o => ({ ...o, payout: Number(o.payout) }));
+    res.json(offers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Saldo do usuário (sem auth, só pelo subid)
+app.get("/balance/:subid", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT balance FROM users WHERE subid = $1", [req.params.subid]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json({ balance: Number(result.rows[0].balance) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Histórico de saques do usuário
+app.get("/withdrawals/:subid", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM withdrawals WHERE subid = $1 ORDER BY created_at DESC",
+      [req.params.subid]
+    );
+    const rows = result.rows.map(w => ({ ...w, amount: Number(w.amount) }));
+    res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -312,20 +336,25 @@ app.get("/dashboard", authMiddleware, async (req, res) => {
   }
 });
 
-// Solicitar saque
-app.post("/withdraw", authMiddleware, async (req, res) => {
-  const { subid } = req.user;
-  const { amount, pix_key } = req.body;
+// Solicitar saque (aceita subid no body, sem necessidade de token)
+app.post("/withdraw", async (req, res) => {
+  const { subid, amount, pix_key } = req.body;
+
+  if (!subid || !amount) {
+    return res.status(400).json({ error: "subid e amount são obrigatórios" });
+  }
 
   try {
     const userResult = await pool.query("SELECT * FROM users WHERE subid = $1", [subid]);
     const user = userResult.rows[0];
 
-    if (user.balance < amount) {
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado" });
+
+    if (Number(user.balance) < Number(amount)) {
       return res.status(400).json({ error: "Saldo insuficiente" });
     }
 
-    if (amount < 10) {
+    if (Number(amount) < 10) {
       return res.status(400).json({ error: "Valor mínimo para saque é R$ 10,00" });
     }
 
@@ -344,35 +373,83 @@ app.post("/withdraw", authMiddleware, async (req, res) => {
 app.get("/admin/stats", async (req, res) => {
   try {
     const users = await pool.query("SELECT COUNT(*) as total FROM users");
-    const offers = await pool.query("SELECT COUNT(*) as total FROM offers");
-    const conversions = await pool.query("SELECT COUNT(*) as total, COALESCE(SUM(payout), 0) as total_payout FROM conversions");
-    const withdrawals = await pool.query("SELECT COUNT(*) as total, COALESCE(SUM(amount), 0) as total_amount FROM withdrawals WHERE status = 'approved'");
+    const clicks = await pool.query("SELECT COUNT(*) as total FROM clicks");
+    const conversions = await pool.query("SELECT COUNT(*) as total, COALESCE(SUM(payout), 0) as total_earned FROM conversions WHERE status = 'approved'");
+    const paid = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'approved'");
+    const pending = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'pending'");
+    const userBalance = await pool.query("SELECT COALESCE(SUM(balance), 0) as total FROM users");
 
     res.json({
-      users: users.rows[0].total,
-      offers: offers.rows[0].total,
-      conversions: conversions.rows[0].total,
-      totalPayout: conversions.rows[0].total_payout,
-      withdrawals: withdrawals.rows[0].total,
-      totalWithdrawn: withdrawals.rows[0].total_amount
+      users: Number(users.rows[0].total),
+      clicks: Number(clicks.rows[0].total),
+      conversions: Number(conversions.rows[0].total),
+      total_earned: Number(conversions.rows[0].total_earned), // quanto usuários já ganharam (conv. aprovadas)
+      total_paid: Number(paid.rows[0].total),               // quanto a plataforma já pagou via saque
+      pending_withdrawals: Number(pending.rows[0].total),   // saques pendentes
+      user_balance_total: Number(userBalance.rows[0].total) // saldo acumulado a pagar
     });
+  } catch (error) {
+    console.error('admin/stats error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Listar ofertas (admin vê todas, incluindo inativas)
+app.get("/admin/offers", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM offers ORDER BY created_at DESC");
+    const offers = result.rows.map(o => ({ ...o, payout: Number(o.payout) }));
+    res.json(offers);
+  } catch (error) {
+    console.error('admin/offers GET error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remover oferta
+app.delete("/admin/offers/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM offers WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Adicionar oferta
+// Listar usuários
+app.get("/admin/users", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT subid, name, email, balance, created_at FROM users ORDER BY created_at DESC"
+    );
+    const users = result.rows.map(u => ({ ...u, balance: Number(u.balance) }));
+    res.json(users);
+  } catch (error) {
+    console.error('admin/users error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Adicionar oferta (aceita tanto {name,description,url} quanto {title,desc,link})
 app.post("/admin/offers", async (req, res) => {
-  const { name, description, payout, url } = req.body;
+  const { name, title, description, desc, payout, url, link } = req.body;
+  const offerName = name || title;
+  const offerDesc = description || desc;
+  const offerUrl = url || link;
+
+  if (!offerName || !offerDesc || payout == null || !offerUrl) {
+    return res.status(400).json({ error: "Preencha todos os campos" });
+  }
 
   try {
     await pool.query(
       "INSERT INTO offers (name, description, payout, url) VALUES ($1, $2, $3, $4)",
-      [name, description, payout, url]
+      [offerName, offerDesc, payout, offerUrl]
     );
 
     res.json({ success: true, message: "Oferta adicionada com sucesso!" });
   } catch (error) {
+    console.error('admin/offers error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -381,20 +458,22 @@ app.post("/admin/offers", async (req, res) => {
 app.get("/admin/withdrawals", async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT w.*, u.name, u.email 
+      SELECT w.*, u.name, u.email, u.pix_key AS user_pix_key
       FROM withdrawals w 
       JOIN users u ON w.subid = u.subid 
       WHERE w.status = 'pending' 
       ORDER BY w.created_at DESC
     `);
-    res.json(result.rows);
+    const withdrawals = result.rows.map(w => ({ ...w, amount: Number(w.amount) }));
+    res.json(withdrawals);
   } catch (error) {
+    console.error('admin/withdrawals error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // Aprovar/rejeitar saque
-app.post("/admin/withdrawals/:id/process", async (req, res) => {
+app.post("/admin/withdrawals/:id", async (req, res) => {
   const { id } = req.params;
   const { status } = req.body; // 'approved' ou 'rejected'
 
@@ -420,6 +499,7 @@ app.post("/admin/withdrawals/:id/process", async (req, res) => {
 
     res.json({ success: true, message: `Saque ${status === 'approved' ? 'aprovado' : 'rejeitado'} com sucesso!` });
   } catch (error) {
+    console.error('admin/withdrawals/:id error:', error);
     res.status(500).json({ error: error.message });
   }
 });
