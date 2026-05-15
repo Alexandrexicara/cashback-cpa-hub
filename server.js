@@ -11,6 +11,28 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
+// Healthcheck / diagnóstico
+app.get("/health", async (req, res) => {
+  const out = { ok: true, db: false, tables: {}, env: { NODE_ENV: process.env.NODE_ENV || 'unset', has_DATABASE_URL: !!process.env.DATABASE_URL } };
+  try {
+    await pool.query("SELECT 1");
+    out.db = true;
+    for (const t of ['users','offers','clicks','conversions','withdrawals']) {
+      try {
+        const r = await pool.query(`SELECT COUNT(*)::int AS c FROM ${t}`);
+        out.tables[t] = r.rows[0].c;
+      } catch (e) {
+        out.tables[t] = `ERROR: ${e.message}`;
+        out.ok = false;
+      }
+    }
+  } catch (e) {
+    out.ok = false;
+    out.error = e.message;
+  }
+  res.status(out.ok ? 200 : 500).json(out);
+});
+
 // PostgreSQL connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgresql://localhost:5432/cpahub",
@@ -370,23 +392,33 @@ app.post("/withdraw", async (req, res) => {
 });
 
 // Admin Panel
+async function safeQuery(sql, params = []) {
+  try {
+    const r = await pool.query(sql, params);
+    return r.rows;
+  } catch (e) {
+    console.error('safeQuery error:', sql, e.message);
+    return null;
+  }
+}
+
 app.get("/admin/stats", async (req, res) => {
   try {
-    const users = await pool.query("SELECT COUNT(*) as total FROM users");
-    const clicks = await pool.query("SELECT COUNT(*) as total FROM clicks");
-    const conversions = await pool.query("SELECT COUNT(*) as total, COALESCE(SUM(payout), 0) as total_earned FROM conversions WHERE status = 'approved'");
-    const paid = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'approved'");
-    const pending = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'pending'");
-    const userBalance = await pool.query("SELECT COALESCE(SUM(balance), 0) as total FROM users");
+    const u = await safeQuery("SELECT COUNT(*) as total FROM users");
+    const c = await safeQuery("SELECT COUNT(*) as total FROM clicks");
+    const cv = await safeQuery("SELECT COUNT(*) as total, COALESCE(SUM(payout), 0) as total_earned FROM conversions WHERE status = 'approved'");
+    const p = await safeQuery("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'approved'");
+    const pe = await safeQuery("SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE status = 'pending'");
+    const ub = await safeQuery("SELECT COALESCE(SUM(balance), 0) as total FROM users");
 
     res.json({
-      users: Number(users.rows[0].total),
-      clicks: Number(clicks.rows[0].total),
-      conversions: Number(conversions.rows[0].total),
-      total_earned: Number(conversions.rows[0].total_earned), // quanto usuários já ganharam (conv. aprovadas)
-      total_paid: Number(paid.rows[0].total),               // quanto a plataforma já pagou via saque
-      pending_withdrawals: Number(pending.rows[0].total),   // saques pendentes
-      user_balance_total: Number(userBalance.rows[0].total) // saldo acumulado a pagar
+      users: u ? Number(u[0].total) : 0,
+      clicks: c ? Number(c[0].total) : 0,
+      conversions: cv ? Number(cv[0].total) : 0,
+      total_earned: cv ? Number(cv[0].total_earned) : 0,
+      total_paid: p ? Number(p[0].total) : 0,
+      pending_withdrawals: pe ? Number(pe[0].total) : 0,
+      user_balance_total: ub ? Number(ub[0].total) : 0
     });
   } catch (error) {
     console.error('admin/stats error:', error);
@@ -397,8 +429,9 @@ app.get("/admin/stats", async (req, res) => {
 // Listar ofertas (admin vê todas, incluindo inativas)
 app.get("/admin/offers", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM offers ORDER BY created_at DESC");
-    const offers = result.rows.map(o => ({ ...o, payout: Number(o.payout) }));
+    const rows = await safeQuery("SELECT * FROM offers ORDER BY created_at DESC");
+    if (!rows) return res.json([]);
+    const offers = rows.map(o => ({ ...o, payout: Number(o.payout) }));
     res.json(offers);
   } catch (error) {
     console.error('admin/offers GET error:', error);
@@ -419,10 +452,11 @@ app.delete("/admin/offers/:id", async (req, res) => {
 // Listar usuários
 app.get("/admin/users", async (req, res) => {
   try {
-    const result = await pool.query(
+    const rows = await safeQuery(
       "SELECT subid, name, email, balance, created_at FROM users ORDER BY created_at DESC"
     );
-    const users = result.rows.map(u => ({ ...u, balance: Number(u.balance) }));
+    if (!rows) return res.json([]);
+    const users = rows.map(u => ({ ...u, balance: Number(u.balance) }));
     res.json(users);
   } catch (error) {
     console.error('admin/users error:', error);
@@ -457,14 +491,15 @@ app.post("/admin/offers", async (req, res) => {
 // Listar saques pendentes
 app.get("/admin/withdrawals", async (req, res) => {
   try {
-    const result = await pool.query(`
+    const rows = await safeQuery(`
       SELECT w.*, u.name, u.email, u.pix_key AS user_pix_key
       FROM withdrawals w 
       JOIN users u ON w.subid = u.subid 
       WHERE w.status = 'pending' 
       ORDER BY w.created_at DESC
     `);
-    const withdrawals = result.rows.map(w => ({ ...w, amount: Number(w.amount) }));
+    if (!rows) return res.json([]);
+    const withdrawals = rows.map(w => ({ ...w, amount: Number(w.amount) }));
     res.json(withdrawals);
   } catch (error) {
     console.error('admin/withdrawals error:', error);
