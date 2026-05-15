@@ -18,8 +18,8 @@ services:
       - key: PORT
         value: 10000
 
-  # PostgreSQL Database
-  - type: pserv
-    name: cpa-hub-db
+# PostgreSQL Database (sintaxe correta do Render Blueprint)
+databases:
+  - name: cpa-hub-db
     plan: free
     databaseName: cpahub
